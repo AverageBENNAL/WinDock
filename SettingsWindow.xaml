@@ -1,0 +1,222 @@
+<Window x:Class="WinDock.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WinDock" Icon="icon.ico" Width="800" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" Background="#1C1C1E" Foreground="#F2F2F7"
+        FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="13" UseLayoutRounding="True">
+
+    <StackPanel Margin="24,18,24,22">
+        <Grid Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Dock Settings" FontSize="22" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI"/>
+                <TextBlock Text="Changes apply as you make them." Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
+            </StackPanel>
+            <Button Style="{StaticResource PillButton}" Content="Reset to defaults" Click="Reset_Click"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    ToolTip="Restores the look and behaviour settings. Your pinned apps are kept."/>
+        </Grid>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left column -->
+            <StackPanel>
+                <TextBlock Style="{StaticResource Heading}" Text="APPEARANCE"/>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Border Style="{StaticResource Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="50"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Icon size" VerticalAlignment="Center"/>
+                                <Slider x:Name="IconSize" Grid.Column="1" Minimum="32" Maximum="80" ValueChanged="Slider_Changed"/>
+                                <TextBlock x:Name="IconSizeText" Grid.Column="2" Foreground="{StaticResource Muted}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="50"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Magnification" VerticalAlignment="Center"/>
+                                <Slider x:Name="Magnification" Grid.Column="1" Minimum="1" Maximum="2.5" ValueChanged="Slider_Changed"/>
+                                <TextBlock x:Name="MagnificationText" Grid.Column="2" Foreground="{StaticResource Muted}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="50"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Opacity" VerticalAlignment="Center"/>
+                                <Slider x:Name="BarOpacity" Grid.Column="1" Minimum="0" Maximum="1" ValueChanged="Slider_Changed"/>
+                                <TextBlock x:Name="BarOpacityText" Grid.Column="2" Foreground="{StaticResource Muted}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="50"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Roundness" VerticalAlignment="Center"/>
+                                <Slider x:Name="Corner" Grid.Column="1" Minimum="0" Maximum="40" ValueChanged="Slider_Changed"/>
+                                <TextBlock x:Name="CornerText" Grid.Column="2" Foreground="{StaticResource Muted}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Row}" BorderThickness="0">
+                            <CheckBox x:Name="DarkTheme" Content="Dark dock" Click="Option_Changed"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Style="{StaticResource Heading}" Text="IN THE DOCK" Margin="14,22,0,8"/>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="ShowLaunchpad" Content="Launchpad" Click="Option_Changed"/>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="ShowSearch" Content="Windows Search" Click="Option_Changed"/>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="ShowTrash" Content="Recycle Bin" Click="Option_Changed"/>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="ShowStatus" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="System controls"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Network, sound, clock and power, beside the dock on the main display."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                        <Border Padding="10,10,10,6">
+                            <StackPanel>
+                                <ItemsControl x:Name="Pinned">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid x:Name="Tile" Width="52" Height="52" Background="Transparent" ToolTip="{Binding Name}">
+                                                <Image Source="{Binding Icon}" Width="36" Height="36" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <Button x:Name="Remove" Style="{StaticResource RemoveButton}" Tag="{Binding Id}" Click="Remove_Click"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Hidden" ToolTip="Unpin from Dock"/>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <Trigger SourceName="Tile" Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Remove" Property="Visibility" Value="Visible"/>
+                                                </Trigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Style="{StaticResource Hint}" Margin="4,6,4,6"
+                                           Text="Drag icons in the dock to rearrange them. To add an app, right-click it in Launchpad, or in the dock while it is running, and choose Pin to Dock."/>
+                                <Button Style="{StaticResource PillButton}" Content="Add my taskbar pins" Click="Import_Click"
+                                        HorizontalAlignment="Left" Margin="4,4,0,6"
+                                        ToolTip="Adds anything pinned to the Windows taskbar that isn't in the dock yet."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Right column -->
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource Heading}" Text="FEATURES"/>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="DockEnabled" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="Dock"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="The Mac-style dock. Turn it off to go back to the normal Windows taskbar."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                        <Border Style="{StaticResource Row}" BorderThickness="0">
+                            <CheckBox x:Name="IconButton" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="Desktop icons button"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="A small floating button that hides and shows your desktop icons. Drag it anywhere on the desktop."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Style="{StaticResource Heading}" Text="POSITION" Margin="14,22,0,8"/>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Border Style="{StaticResource Row}" Padding="12,10">
+                            <Border Background="#1C1C1E" CornerRadius="8">
+                                <UniformGrid Columns="3">
+                                    <RadioButton x:Name="ModeAuto" Style="{StaticResource Segment}" Content="Auto-hide" Checked="Mode_Changed"/>
+                                    <RadioButton x:Name="ModeAlways" Style="{StaticResource Segment}" Content="Always visible" Checked="Mode_Changed"/>
+                                    <RadioButton x:Name="ModeBehind" Style="{StaticResource Segment}" Content="Behind windows" Checked="Mode_Changed"/>
+                                </UniformGrid>
+                            </Border>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="AllMonitors" Content="Show on every monitor" Click="Option_Changed"/>
+                        </Border>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="AvoidWindows" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="Stay hidden under windows"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Won't pop up where a window covers the dock, so it stays out of windowed games."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                        <Border Style="{StaticResource Row}" BorderThickness="0">
+                            <CheckBox x:Name="ShowWhenEmpty" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="Show on an empty desktop"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Keeps the dock up while a monitor has no open windows."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Style="{StaticResource Heading}" Text="WINDOWS" Margin="14,22,0,8"/>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Border Style="{StaticResource Row}">
+                            <CheckBox x:Name="HideTaskbar" Click="Option_Changed">
+                                <StackPanel>
+                                    <TextBlock Text="Hide the Windows taskbar"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Turn off to get the clock and system tray back; the dock then sits above the taskbar."/>
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                        <Border Style="{StaticResource Row}" BorderThickness="0">
+                            <CheckBox x:Name="StartWithWindows" Content="Start WinDock when I sign in" Click="Startup_Changed"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,22,0,0" Padding="14,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Turn off WinDock"/>
+                            <TextBlock Style="{StaticResource Hint}" Text="Brings the Windows taskbar back. Open WinDock from the Start menu to turn it on again."/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Style="{StaticResource PillButton}" Content="Turn off" Click="TurnOff_Click" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</Window>
