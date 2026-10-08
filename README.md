@@ -45,7 +45,9 @@ Prefer not to install? Download `WinDock-win-x64.zip` instead, extract it somewh
 
 By default WinDock hides the Windows taskbar while it runs, which also hides the clock and system tray. To get them back, right-click the dock and choose **Show Windows Taskbar**; the dock then sits just above it.
 
-Turning WinDock off restores the taskbar exactly as it was. If WinDock is ever force-closed and the taskbar stays hidden, start WinDock again and turn it off normally.
+While it is hiding the taskbar, WinDock also switches off Windows' **Show flashing on taskbar apps** setting. Otherwise Windows pops the hidden taskbar up whenever an app wants attention and holds it there, which makes snapped windows stop short of the screen edge. The dock bounces that app's icon instead.
+
+Turning WinDock off restores the taskbar, and that setting, exactly as they were. If WinDock is ever force-closed and the taskbar stays hidden, start WinDock again and turn it off normally.
 
 ## Uninstall
 

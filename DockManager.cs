@@ -11,13 +11,15 @@ public class DockManager
     LaunchpadWindow? _launchpad;
     SettingsWindow? _settingsWindow;
     IconToggleWindow? _iconToggle;
-    bool _cleanedUp;
+    bool _cleanedUp, _managingTaskbar;
+    readonly System.Windows.Threading.DispatcherTimer _taskbarWatch = new() { Interval = TimeSpan.FromSeconds(1) };
 
     public Settings Settings { get; }
 
     public DockManager(Settings settings)
     {
         Settings = settings;
+        _taskbarWatch.Tick += (_, _) => Taskbar.KeepHidden();
         SystemEvents.DisplaySettingsChanged += (_, _) => Application.Current.Dispatcher.BeginInvoke(Apply);
     }
 
@@ -45,16 +47,17 @@ public class DockManager
         if (monitors.SequenceEqual(_docks.Select(d => d.Monitor)))
         {
             foreach (var dock in _docks) dock.ApplySettings();
-            return;
         }
-
-        foreach (var dock in _docks) { dock.Shutdown(); dock.Close(); }
-        _docks.Clear();
-        foreach (var monitor in monitors)
+        else
         {
-            var dock = new DockWindow(this, monitor, isPrimary: monitor == monitors[0]);
-            _docks.Add(dock);
-            dock.Show();
+            foreach (var dock in _docks) { dock.Shutdown(); dock.Close(); }
+            _docks.Clear();
+            foreach (var monitor in monitors)
+            {
+                var dock = new DockWindow(this, monitor, isPrimary: monitor == monitors[0]);
+                _docks.Add(dock);
+                dock.Show();
+            }
         }
     }
 
@@ -82,17 +85,38 @@ public class DockManager
             Settings.TaskbarWasAutoHide = Taskbar.GetAutoHide();
             Settings.Save();
         }
-        Taskbar.SetAutoHide(true);
-        Taskbar.SetHidden(true);
+        if (Settings.TaskbarFlashingWas == null)
+        {
+            Settings.TaskbarFlashingWas = Taskbar.GetFlashing();
+            Settings.Save();
+        }
+        if (!_managingTaskbar)
+        {
+            _managingTaskbar = true;
+            Taskbar.SetFlashing(0);
+            Taskbar.SetAutoHide(true);
+            Log.Write("taskbar: hidden");
+        }
+        Taskbar.KeepHidden();
+        _taskbarWatch.Start();
     }
 
     void RestoreTaskbar()
     {
+        _taskbarWatch.Stop();
+        _managingTaskbar = false;
         if (Settings.TaskbarWasAutoHide is not bool wasAutoHide) return;
-        Taskbar.SetHidden(false);
-        Taskbar.SetAutoHide(wasAutoHide);
+        Taskbar.Restore(wasAutoHide, Settings.TaskbarFlashingWas ?? Taskbar.FlashingNotSet);
         Settings.TaskbarWasAutoHide = null;
+        Settings.TaskbarFlashingWas = null;
         Settings.Save();
+        Log.Write("taskbar: restored");
+    }
+
+    /// <summary>An app asked for attention: bounce its icon, since the taskbar isn't there to flash.</summary>
+    public void Attention(IntPtr window)
+    {
+        foreach (var dock in _docks) dock.Attention(window);
     }
 
     public void ToggleTaskbar()

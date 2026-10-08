@@ -82,10 +82,10 @@ internal static class Installer
         StopRunning();
 
         // If WinDock didn't get to exit cleanly, give the taskbar back ourselves.
-        if (Settings.Load().TaskbarWasAutoHide is bool wasAutoHide)
+        var saved = Settings.Load();
+        if (saved.TaskbarWasAutoHide is bool wasAutoHide)
         {
-            Taskbar.SetHidden(false);
-            Taskbar.SetAutoHide(wasAutoHide);
+            Taskbar.Restore(wasAutoHide, saved.TaskbarFlashingWas ?? Taskbar.FlashingNotSet);
         }
 
         // Don't leave the desktop icons hidden with no button to bring them back.

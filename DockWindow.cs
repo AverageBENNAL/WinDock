@@ -138,6 +138,7 @@ public class DockWindow : Window
         Native.SetWindowLongPtr(_hwnd, Native.GWL_EXSTYLE, new IntPtr(ex | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE));
 
         ApplySettings();
+        if (_isPrimary) ListenForAttention();
         _lastActive = DateTime.Now.AddSeconds(4);   // show off for a moment before auto-hiding
         _timer.Start();
     }
@@ -218,6 +219,33 @@ public class DockWindow : Window
         Native.SHAppBarMessage(Native.ABM_QUERYPOS, ref data);
         data.rc.Top = data.rc.Bottom - strip;
         Native.SHAppBarMessage(Native.ABM_SETPOS, ref data);
+    }
+
+    // ---- attention: Windows tells shell-hook windows when an app flashes for attention ----
+
+    [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
+
+    uint _shellMessage;
+
+    void ListenForAttention()
+    {
+        _shellMessage = RegisterWindowMessage("SHELLHOOK");
+        RegisterShellHookWindow(_hwnd);
+        HwndSource.FromHwnd(_hwnd)?.AddHook((IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+        {
+            const int HSHELL_FLASH = 0x8006;
+            if ((uint)message == _shellMessage && wParam.ToInt64() == HSHELL_FLASH) _manager.Attention(lParam);
+            return IntPtr.Zero;
+        });
+    }
+
+    /// <summary>Bounces the icon of the app that owns <paramref name="window"/>, at most every few seconds.</summary>
+    public void Attention(IntPtr window)
+    {
+        var item = _items.FirstOrDefault(i => i.Kind == Kind.App && i.Windows.Contains(window));
+        if (item == null || (DateTime.Now - item.Bounce).TotalSeconds < 6) return;
+        item.Bounce = DateTime.Now;
     }
 
     void SendToBottom() =>
@@ -471,7 +499,6 @@ public class DockWindow : Window
         // Icons can fail to load in the first moments after sign-in; keep trying until they appear.
         foreach (var item in _items)
             if (item.Kind == Kind.App && item.Image is { Source: null } image) image.Source = IconFor(item);
-        if (_s.HideTaskbar) Taskbar.SetHidden(true);
         if (_s.Mode == DockMode.BehindWindows) SendToBottom();
         if (_s.Mode == DockMode.AlwaysVisible) _fullscreen = IsForegroundFullscreen();
 
@@ -498,13 +525,72 @@ public class DockWindow : Window
         IntPtr foreground = Native.GetForegroundWindow();
         if (foreground == _lastForeground) return;
         _lastForeground = foreground;
+        bool wasOpen = _startOpen;
         _startOpen = false;
+        string name = "";
         Native.GetWindowThreadProcessId(foreground, out uint pid);
-        try
+        try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { }
+        _startOpen = name is "StartMenuExperienceHost" or "SearchHost";
+
+        // Start sits in front of everything, so a click meant for the dock can land on Start and just
+        // close it. Keep the dock up for a moment afterwards so the next click reaches it.
+        if (wasOpen && !_startOpen) _lastActive = DateTime.Now.AddSeconds(3);
+
+        // Start and Search open low enough to cover the top of the dock; lift them clear. They are
+        // still sliding into place when they take focus, so check a few times.
+        if (_startOpen && Native.MonitorFromWindow(foreground, Native.MONITOR_DEFAULTTONEAREST) == Monitor)
         {
-            _startOpen = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName is "StartMenuExperienceHost" or "SearchHost";
+            int tries = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            timer.Tick += (_, _) =>
+            {
+                if (++tries >= 6 || Native.GetForegroundWindow() != foreground) timer.Stop();
+                foreach (IntPtr panel in ShellPanels()) LiftAboveDock(panel);
+            };
+            timer.Start();
         }
-        catch { }
+    }
+
+    // The Start and Search panels showing on this monitor. Start's own window is not the one that
+    // holds focus (the search box is), and these windows only turn up in a direct window search.
+    IEnumerable<IntPtr> ShellPanels()
+    {
+        IntPtr window = IntPtr.Zero;
+        while ((window = Native.FindWindowEx(IntPtr.Zero, window, "Windows.UI.Core.CoreWindow", null)) != IntPtr.Zero)
+        {
+            if (!Native.IsWindowVisible(window)) continue;
+            if (Native.DwmGetWindowAttribute(window, Native.DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0) continue;
+            if (Native.MonitorFromWindow(window, Native.MONITOR_DEFAULTTONEAREST) != Monitor) continue;
+            Native.GetWindowThreadProcessId(window, out uint pid);
+            string name = "";
+            try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { }
+            if (name is "StartMenuExperienceHost" or "SearchHost") yield return window;
+        }
+    }
+
+    // Moves a window up just far enough that it no longer overlaps the dock.
+    void LiftAboveDock(IntPtr window)
+    {
+        if (!Native.GetWindowRect(window, out var rect)) return;
+        int dockTop = _screen.Bottom - (int)((BottomGap + _barHeight + 8) * _dpi);
+        // These windows keep whatever position they are given, so place the bottom edge exactly on
+        // the dock's top each time rather than only nudging upward. Start's window is as tall as the
+        // screen with its panel at the bottom, so its top is allowed to go off-screen.
+        if (Math.Abs(rect.Bottom - dockTop) <= 1 || rect.Bottom < _screen.Bottom - (_screen.Bottom - _screen.Top) / 3) return;
+        LiftedPanels.TryAdd(window, rect.Top);
+        int y = rect.Top - (rect.Bottom - dockTop);
+        Native.SetWindowPos(window, IntPtr.Zero, rect.Left, y, 0, 0, 0x0001 | 0x0004 | 0x0010);   // NOSIZE | NOZORDER | NOACTIVATE
+    }
+
+    // Where each Start/Search window sat before WinDock moved it, so it can be put back on exit.
+    static readonly Dictionary<IntPtr, int> LiftedPanels = new();
+
+    static void RestoreLiftedPanels()
+    {
+        foreach (var (window, top) in LiftedPanels)
+            if (Native.GetWindowRect(window, out var rect))
+                Native.SetWindowPos(window, IntPtr.Zero, rect.Left, top, 0, 0, 0x0001 | 0x0004 | 0x0010);
+        LiftedPanels.Clear();
     }
 
     // Refreshes the system controls. Each cell's Tag is its hover label. The network scan is the
@@ -573,7 +659,8 @@ public class DockWindow : Window
         if (cell == _power)
         {
             var menu = new ContextMenu { PlacementTarget = this, Placement = PlacementMode.MousePoint };
-            Add(menu, "Start Menu", () => Native.PressKey(0x5B));
+            // Ask the taskbar to open Start (WM_SYSCOMMAND / SC_TASKLIST); a simulated Windows key is unreliable.
+            Add(menu, "Start Menu", () => Native.PostMessage(Native.FindWindow("Shell_TrayWnd", null), 0x0112, new IntPtr(0xF130), IntPtr.Zero));
             menu.Items.Add(new Separator());
             Add(menu, "Lock", SystemStatus.Lock);
             Add(menu, "Sleep", SystemStatus.Sleep);
@@ -867,11 +954,15 @@ public class DockWindow : Window
             catch { return; }
 
             timer.Stop();
-            if (Native.MonitorFromWindow(search, Native.MONITOR_DEFAULTTONEAREST) == Monitor) return;
+            if (Native.MonitorFromWindow(search, Native.MONITOR_DEFAULTTONEAREST) == Monitor)
+            {
+                LiftAboveDock(search);
+                return;
+            }
             if (!Native.GetWindowRect(search, out var rect)) return;
             int width = rect.Right - rect.Left, height = rect.Bottom - rect.Top;
             int x = Math.Max(_screen.Left, _screen.Left + (_screen.Right - _screen.Left - width) / 2);
-            int y = Math.Max(_screen.Top, _screen.Bottom - height - (int)((BottomGap + _barHeight) * _dpi));
+            int y = Math.Max(_screen.Top, _screen.Bottom - height - (int)((BottomGap + _barHeight + 8) * _dpi));
             Native.SetWindowPos(search, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);   // NOSIZE | NOZORDER | NOACTIVATE
         };
         timer.Start();
@@ -949,5 +1040,6 @@ public class DockWindow : Window
     {
         _timer.Stop();
         SetAppBar(false);
+        RestoreLiftedPanels();
     }
 }

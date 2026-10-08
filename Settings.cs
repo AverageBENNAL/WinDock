@@ -47,6 +47,9 @@ public class Settings
     // The taskbar's own auto-hide state before WinDock took it over; null while WinDock isn't managing it.
     public bool? TaskbarWasAutoHide { get; set; }
 
+    // Windows' "Show flashing on taskbar apps" setting before WinDock switched it off, to put back later.
+    public int? TaskbarFlashingWas { get; set; }
+
     public static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinDock");
 
