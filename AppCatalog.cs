@@ -169,6 +169,27 @@ internal static class AppCatalog
     static List<RunningApp>? _running;
     static long _runningAt;
 
+    /// <summary>Full path of a process's exe, or null if it can't be read.</summary>
+    public static string? ExePath(uint pid)
+    {
+        IntPtr process = Native.OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            var sb = new StringBuilder(1024);
+            uint size = (uint)sb.Capacity;
+            return Native.QueryFullProcessImageName(process, 0, sb, ref size) ? sb.ToString() : null;
+        }
+        finally { Native.CloseHandle(process); }
+    }
+
+    /// <summary>Starts a program or shortcut with extra arguments and/or a shell verb such as "runas".</summary>
+    public static void Start(string file, string arguments = "", string? verb = null)
+    {
+        try { Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = true, Verb = verb ?? "" }); }
+        catch { }   // includes the user saying No to the admin prompt
+    }
+
     static AppEntry? Describe(uint pid)
     {
         IntPtr process = Native.OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);

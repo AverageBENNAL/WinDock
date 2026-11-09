@@ -44,6 +44,11 @@ public class Settings
     public bool Seeded { get; set; }
     public List<PinnedApp> Pinned { get; set; } = new();
 
+    // Exe names (lower case, e.g. "game.exe") the user marked as a game or as not a game, overriding
+    // WinDock's own guess. A game keeps the dock from popping up over it.
+    public List<string> Games { get; set; } = new();
+    public List<string> NotGames { get; set; } = new();
+
     // The taskbar's own auto-hide state before WinDock took it over; null while WinDock isn't managing it.
     public bool? TaskbarWasAutoHide { get; set; }
 

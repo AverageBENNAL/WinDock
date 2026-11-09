@@ -152,6 +152,10 @@ internal static class Native
         keybd_event(key, 0, 0x2, UIntPtr.Zero);
     }
 
+    [DllImport("user32.dll")] public static extern bool GetClipCursor(out RECT rect);
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
+
     public static string ClassName(IntPtr hWnd)
     {
         var sb = new StringBuilder(256);

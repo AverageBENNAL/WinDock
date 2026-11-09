@@ -170,8 +170,8 @@
                         <Border Style="{StaticResource Row}">
                             <CheckBox x:Name="AvoidWindows" Click="Option_Changed">
                                 <StackPanel>
-                                    <TextBlock Text="Stay hidden under windows"/>
-                                    <TextBlock Style="{StaticResource Hint}" Text="Won't pop up where a window covers the dock, so it stays out of windowed games."/>
+                                    <TextBlock Text="Stay hidden over games"/>
+                                    <TextBlock Style="{StaticResource Hint}" Text="Won't pop up over a game, fullscreen or windowed. Other apps still let it pop up. Right-click an app to mark it as a game."/>
                                 </StackPanel>
                             </CheckBox>
                         </Border>

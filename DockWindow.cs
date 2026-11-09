@@ -408,7 +408,7 @@ public class DockWindow : Window
             int edge = (int)Math.Round(_baseBottom * _dpi);
             bool atEdge = point.Y >= edge - 3 && point.Y <= edge
                 && point.X >= _screen.Left && point.X < _screen.Right;
-            if (atEdge && _hideOffset > 0) _fullscreen = IsForegroundFullscreen() || (_s.AvoidWindows && IsCovered());
+            if (atEdge && _hideOffset > 0) _fullscreen = GameInTheWay();
             if (_tick % 6 == 0) CheckStartMenu();
             if (inZone || _menuOpen || _monitorEmpty || _startOpen || (atEdge && !_fullscreen)) _lastActive = now;
             shown = (now - _lastActive).TotalMilliseconds < 500;
@@ -692,14 +692,61 @@ public class DockWindow : Window
             && rect.Right == _screen.Right && rect.Bottom == _screen.Bottom;
     }
 
-    // True when any open window overlaps where the bar would appear (a windowed game, a maximized app).
-    bool IsCovered()
+    // Only a game keeps the dock down. Fullscreen or snapped browsers, videos and other apps still let
+    // it pop up when the mouse reaches the bottom edge, the way the Windows taskbar does.
+    bool GameInTheWay()
+    {
+        IntPtr foreground = Native.GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == _hwnd) return false;
+        if (Native.MonitorFromWindow(foreground, Native.MONITOR_DEFAULTTONEAREST) != Monitor) return false;
+        Native.GetWindowThreadProcessId(foreground, out uint pid);
+        if (!IsGame(pid)) return false;
+        return IsForegroundFullscreen() || (_s.AvoidWindows && Covers(foreground));
+    }
+
+    static readonly string[] NeverGames =
+    {
+        "msedge.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "explorer.exe",
+        "vlc.exe", "mpc-hc64.exe", "mpv.exe", "code.exe", "devenv.exe", "winword.exe", "excel.exe",
+        "powerpnt.exe", "outlook.exe", "discord.exe", "spotify.exe", "obs64.exe", "steam.exe",
+        "steamwebhelper.exe", "epicgameslauncher.exe", "applicationframehost.exe", "claude.exe",
+        "unrealeditor.exe", "blender.exe",
+    };
+
+    static readonly string[] GameFolders =
+    {
+        @"\steamapps\common\", @"\epic games\", @"\gog games\", @"\gog galaxy\games\", @"\xboxgames\",
+        @"\riot games\", @"\ea games\", @"\ubisoft game launcher\games\", @"\games\",
+    };
+
+    // Best guess at whether a process is a game. The user's own choice (right-click > Treat as Game)
+    // always wins; otherwise a game is something in a game library folder, something that has taken
+    // the screen in exclusive fullscreen, or something holding the mouse inside its window.
+    bool IsGame(uint pid)
+    {
+        string? path = AppCatalog.ExePath(pid);
+        if (path == null) return false;
+        string exe = System.IO.Path.GetFileName(path).ToLowerInvariant();
+        if (_s.Games.Contains(exe)) return true;
+        if (_s.NotGames.Contains(exe) || NeverGames.Contains(exe)) return false;
+        string lower = path.ToLowerInvariant();
+        if (GameFolders.Any(lower.Contains)) return true;
+        if (Native.SHQueryUserNotificationState(out int state) == 0 && state == 3) return true;   // QUNS_RUNNING_D3D_FULL_SCREEN
+        if (Native.GetClipCursor(out var clip))
+        {
+            int l = Native.GetSystemMetrics(76), t = Native.GetSystemMetrics(77);   // virtual screen
+            int r = l + Native.GetSystemMetrics(78), b = t + Native.GetSystemMetrics(79);
+            if (clip.Left > l || clip.Top > t || clip.Right < r || clip.Bottom < b) return true;
+        }
+        return false;
+    }
+
+    bool Covers(IntPtr w)
     {
         double left = (Left + _barLeft) * _dpi, right = left + _barWidth * _dpi;
         double bottom = _baseBottom * _dpi, top = bottom - (BottomGap + _barHeight) * _dpi;
-        return AppCatalog.GetRunning().Any(app => app.Windows.Any(w =>
-            !Native.IsIconic(w) && Native.GetWindowRect(w, out var r)
-            && r.Left < right && r.Right > left && r.Top < bottom && r.Bottom > top));
+        return !Native.IsIconic(w) && Native.GetWindowRect(w, out var r)
+            && r.Left < right && r.Right > left && r.Top < bottom && r.Bottom > top;
     }
 
     void Layout(DateTime now)
@@ -986,6 +1033,7 @@ public class DockWindow : Window
                 item.Bounce = DateTime.Now;
                 AppCatalog.Launch(item.Target);
             });
+            AddAppExtras(menu, item);
             Add(menu, item.Pinned ? "Unpin from Dock" : "Pin to Dock", () =>
             {
                 if (item.Pinned) _manager.Unpin(item.Id);
@@ -1015,11 +1063,77 @@ public class DockWindow : Window
             menu.Items.Add(new Separator());
         }
 
+        // What the Windows taskbar's own right-click menu offers.
+        Add(menu, "Task Manager", () => AppCatalog.Start("taskmgr.exe"));
+        Add(menu, "Taskbar Settings", () => AppCatalog.Start("ms-settings:taskbar"));
+        Add(menu, "Show Desktop", () => Native.PressWinKey(0x44));   // Win+D
+        menu.Items.Add(new Separator());
         Add(menu, "Dock Settings...", _manager.OpenSettings);
         Add(menu, _s.HideTaskbar ? "Show Windows Taskbar" : "Hide Windows Taskbar", _manager.ToggleTaskbar);
         Add(menu, "Turn Off WinDock", () => Application.Current.Shutdown());
 
         Show(menu);
+    }
+
+    // Browser private windows, run as administrator, file location, and the game switch.
+    void AddAppExtras(ContextMenu menu, Item item)
+    {
+        string? exe = ExeFor(item);
+        string name = exe == null ? "" : System.IO.Path.GetFileName(exe).ToLowerInvariant();
+        string launch = item.Target.Length > 0 ? item.Target : exe ?? "";
+        bool storeApp = launch.StartsWith("shell:", StringComparison.OrdinalIgnoreCase);
+
+        (string Label, string Args)? privateWindow = name switch
+        {
+            "msedge.exe" => ("New InPrivate Window", "--inprivate"),
+            "chrome.exe" or "brave.exe" or "vivaldi.exe" => ("New Incognito Window", "--incognito"),
+            "firefox.exe" => ("New Private Window", "--private-window"),
+            "opera.exe" => ("New Private Window", "--private"),
+            _ => null
+        };
+        if (privateWindow is { } p && exe != null)
+            Add(menu, p.Label, () => AppCatalog.Start(exe, p.Args));
+
+        if (!storeApp && launch.Length > 0)
+            Add(menu, "Run as Administrator", () => AppCatalog.Start(launch, "", "runas"));
+        if (exe != null)
+            Add(menu, "Open File Location", () => AppCatalog.Start("explorer.exe", "/select,\"" + exe + "\""));
+
+        if (exe != null && item.Windows.Count > 0)
+        {
+            uint pid = item.ProcessIds.FirstOrDefault();
+            bool game = pid != 0 && IsGame(pid);
+            var entry = new MenuItem { Header = "Treat as Game", IsCheckable = true, IsChecked = game, ToolTip = "A game keeps the dock from popping up over it." };
+            entry.Click += (_, _) =>
+            {
+                _s.Games.Remove(name);
+                _s.NotGames.Remove(name);
+                (entry.IsChecked ? _s.Games : _s.NotGames).Add(name);
+                _s.Save();
+            };
+            menu.Items.Add(entry);
+        }
+        menu.Items.Add(new Separator());
+    }
+
+    // The exe behind a dock item: from its running process, or from the pinned shortcut or exe.
+    static string? ExeFor(Item item)
+    {
+        foreach (uint pid in item.ProcessIds)
+            if (AppCatalog.ExePath(pid) is { } path) return path;
+        foreach (string candidate in new[] { item.Id, item.IconPath, item.Target })
+            if (candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candidate)) return candidate;
+        if (item.Target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                dynamic wsh = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+                string target = wsh.CreateShortcut(item.Target).TargetPath;
+                if (target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return target;
+            }
+            catch { }
+        }
+        return null;
     }
 
     void Show(ContextMenu menu)
